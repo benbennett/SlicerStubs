@@ -232,11 +232,17 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
     Given {module_name: [(name, kind, value), ...]}, append stub lines
     describing the runtime API for that module:
 
-      - classes/functions: best-effort alias to defining module
-      - attributes: type(value) if importable, else Any
-      - modules: import underlying module as name
+      - classes/functions: just re-export the underlying symbol
+            from MRMLCorePython import vtkMRMLScene as vtkMRMLScene
 
-    Fallback is Any only when we cannot resolve a sensible import+type.
+      - modules: import underlying module as alias
+            import slicer.cli as cli
+
+      - attributes/instances: use fully qualified type
+            import MRMLCorePython
+            mrmlScene: MRMLCorePython.vtkMRMLScene
+
+    IMPORTANT: we NEVER emit "ClassName: ClassName" for class symbols.
     """
     if not runtime_info_by_module:
         return
@@ -255,7 +261,6 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
             except Exception:
                 existing = ""
 
-        # We'll only add Any import if we actually emit an Any
         already_has_any = "from typing import Any" in existing
         need_any = False
 
@@ -267,45 +272,47 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
             line_body = None
 
             if kind in ("class", "function"):
+                # Re-export the underlying callable/class, NO variable annotation.
                 mod = getattr(value, "__module__", None)
                 obj_name = getattr(value, "__name__", name)
                 if mod and mod != module_name and _is_importable(mod):
-                    # from MRMLCorePython import vtkMRMLScene as vtkMRMLScene
-                    line_import = f"from {mod} import {obj_name}"
-                    line_body = f"{name}: {obj_name}"
+                    # slicer.vtkMRMLScene -> MRMLCorePython.vtkMRMLScene
+                    line_import = f"from {mod} import {obj_name} as {name}"
                 else:
-                    # fallback: no useful defining module, just type as Any
-                    line_body = f"{name}: Any"
-                    need_any = True
+                    # If we can't find a real module, better to skip than to
+                    # create a bogus self-referential type.
+                    continue
 
             elif kind == "module":
                 mod_name = getattr(value, "__name__", None)
                 if mod_name and mod_name != module_name and _is_importable(mod_name):
-                    # import slicer.cli as cli
                     line_body = f"import {mod_name} as {name}"
                 else:
-                    # fallback
                     line_body = f"{name}: Any"
                     need_any = True
 
-            else:  # attribute / instance
+            else:  # attribute / instance, e.g. slicer.mrmlScene
                 t = type(value)
                 mod = getattr(t, "__module__", None)
                 qual = getattr(t, "__qualname__", getattr(t, "__name__", "object"))
 
-                # Builtins: int, float, str, etc.
                 if mod == "builtins":
+                    # int, float, str, etc.
                     line_body = f"{name}: {qual}"
                 elif mod and _is_importable(mod):
+                    # Fully qualified reference: import MOD; name: MOD.QualName
                     # Handle nested qualname like Outer.Inner
                     if "." in qual:
                         outer = qual.split(".")[0]
-                        type_ref = qual
+                        # import the outer symbol to make MOD.Outer.Inner legal
                         line_import = f"from {mod} import {outer}"
+                        type_ref = f"{mod}.{qual}"
                         line_body = f"{name}: {type_ref}"
                     else:
-                        line_import = f"from {mod} import {qual}"
-                        line_body = f"{name}: {qual}"
+                        # just import the module and refer to MOD.Class
+                        line_import = f"import {mod}"
+                        type_ref = f"{mod}.{qual}"
+                        line_body = f"{name}: {type_ref}"
                 else:
                     line_body = f"{name}: Any"
                     need_any = True
@@ -315,13 +322,11 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
             if line_body:
                 body_lines.add(line_body)
 
-        # Nothing to write for this module
         if not import_lines and not body_lines:
             continue
 
         with open(stub_path, "a", encoding="utf-8") as f:
             f.write("\n# Runtime API (auto-generated)\n")
-            # Only add Any import if we actually used Any and it's not already present
             if need_any and not already_has_any:
                 f.write("from typing import Any\n")
 
