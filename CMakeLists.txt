@@ -1,14 +1,15 @@
-cmake_minimum_required(VERSION 3.20.6...3.22.6 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.16.3...3.19.7 FATAL_ERROR)
 
 project(slicerstubs)
 
 #-----------------------------------------------------------------------------
 # Extension meta-information
-set(EXTENSION_HOMEPAGE "https://www.slicer.org/wiki/Documentation/Nightly/Extensions/slicerstubs")
-set(EXTENSION_CONTRIBUTORS "John Doe (AnyWare Corp.)")
-set(EXTENSION_DESCRIPTION "This is an example of a simple extension")
-set(EXTENSION_ICONURL "https://www.example.com/Slicer/Extensions/slicerstubs.png")
-set(EXTENSION_SCREENSHOTURLS "https://www.example.com/Slicer/Extensions/slicerstubs/Screenshots/1.png")
+set(EXTENSION_HOMEPAGE "https://github.com/benbennett/SlicerStubs")
+set(EXTENSION_CATEGORY "Developer Tools")
+set(EXTENSION_CONTRIBUTORS "Benjamin Bennett")
+set(EXTENSION_DESCRIPTION "Extension to create python stubs for 3DSlicer runtime objects")
+set(EXTENSION_ICONURL "https://github.com/benbennett/SlicerStubs/doc/SlicerStubs.png")
+set(EXTENSION_SCREENSHOTURLS "https://github.com/benbennett/SlicerStubs/doc/ScreenShots/1.png")
 set(EXTENSION_DEPENDS "NA") # Specified as a list or "NA" if no dependencies
 
 #-----------------------------------------------------------------------------
@@ -26,6 +27,7 @@ add_subdirectory(src/slicerstubs)
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib/jetbrains
   DESTINATION lib
+  COMPONENT RuntimeLibraries
   )
 
 #-----------------------------------------------------------------------------
