@@ -18,8 +18,15 @@ include(${Slicer_USE_FILE})
 
 #-----------------------------------------------------------------------------
 # Extension modules
-add_subdirectory(slicerstubs)
+add_subdirectory(src/slicerstubs)
 ## NEXT_MODULE
+
+#-----------------------------------------------------------------------------
+# Vendored generator3 library
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib/jetbrains
+  DESTINATION lib
+  )
 
 #-----------------------------------------------------------------------------
 include(${Slicer_EXTENSION_GENERATE_CONFIG})
