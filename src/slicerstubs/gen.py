@@ -16,10 +16,25 @@ import json
 
 DEST_DIR = r"E:\slicer_stubs"  # no spaces
 
-# Make sure vendored generator3 is importable from alongside this file
+# Make sure vendored generator3 is importable from lib/jetbrains
 current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+
+
+def _ensure_generator3_on_path(start_dir: str) -> None:
+    current = start_dir
+    while True:
+        candidate_root = os.path.join(current, "lib", "jetbrains")
+        if os.path.isdir(os.path.join(candidate_root, "generator3")):
+            if candidate_root not in sys.path:
+                sys.path.insert(0, candidate_root)
+            return
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+
+
+_ensure_generator3_on_path(current_dir)
 
 import generator3.core as gen_core
 from generator3.core import SkeletonGenerator
