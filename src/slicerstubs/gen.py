@@ -8,37 +8,22 @@ import inspect
 import types
 import fnmatch
 import builtins
-import json
+from . import config
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+CONFIG = config.OutputConfig()
+DEST_DIR = CONFIG.dest_dir
+SGEN=None
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-
-DEST_DIR = r"E:\slicer_stubs"  # no spaces
-
-# Make sure vendored generator3 is importable from lib/jetbrains
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-
-def _ensure_generator3_on_path(start_dir: str) -> None:
-    current = start_dir
-    while True:
-        candidate_root = os.path.join(current, "lib", "jetbrains")
-        if os.path.isdir(os.path.join(candidate_root, "generator3")):
-            if candidate_root not in sys.path:
-                sys.path.insert(0, candidate_root)
-            return
-        parent = os.path.dirname(current)
-        if parent == current:
-            break
-        current = parent
-
-
-_ensure_generator3_on_path(current_dir)
-
-import generator3.core as gen_core
-from generator3.core import SkeletonGenerator
-import generator3.util_methods as util_methods
+if CONFIG.GEN_TYPE==config.GenType.GENERATOR3:
+    try:
+        from .  import jetbrains_gen3
+    except Exception:
+        import jetbrains_gen3
+    SGEN= jetbrains_gen3.JetBrainsGen3(start_dir=current_dir)
 
 # ---------------------------------------------------------------------------
 # Logging setup: define TRACE but run at INFO so TRACE doesn't show
@@ -57,7 +42,7 @@ logging.basicConfig(
 def setup_normal_logging():
     """Set up normal console logging, but don't interfere with existing handlers"""
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(logging.DEBUG)
 
     has_stdout_handler = any(
         isinstance(h, logging.StreamHandler) and h.stream == sys.stdout
@@ -68,26 +53,6 @@ def setup_normal_logging():
         formatter = logging.Formatter('%(levelname)s: %(message)s')
         handler.setFormatter(formatter)
         root.addHandler(handler)
-
-
-# ---------------------------------------------------------------------------
-# Patch generator3 worker: run in this process, catch failures per-module
-# ---------------------------------------------------------------------------
-
-def _no_subprocess(name, func, args, kwargs, failure_result):
-    try:
-        return func(*args, **kwargs)
-    except Exception as e:
-        target = args[0] if args else "<unknown>"
-        logging.warning(
-            "Skeleton generator worker %s failed for %r: %s",
-            name,
-            target,
-            e,
-        )
-        return failure_result  # e.g. GenerationStatus.FAILED
-
-gen_core.execute_in_subprocess_synchronously = _no_subprocess
 
 # ---------------------------------------------------------------------------
 # Make hasattr safe (NodeInfo / weird __getattr__ shouldn't kill us)
@@ -130,7 +95,7 @@ def mirror_py_to_pyi(root: str, delete_py: bool = False) -> None:
             shutil.copyfile(py_path, pyi_path)
             if delete_py:
                 os.remove(py_path)
-    logging.info("Mirrored .py → .pyi under %s (delete_py=%s)", root, delete_py)
+    logging.info("Mirrored .py to .pyi under %s (delete_py=%s)", root, delete_py)
 
 def expand_introspect_modules(introspect_modules):
     """
@@ -368,65 +333,37 @@ def generated(
     introspect_modules=None,
 ):
     """
-    Run generator3 on introspected modules first (default: slicer.*),
-    then run discover_and_process_all_modules(name_pattern=...) to see
-    what generator3 does with your patterns, AND explicitly write
+    RAND explicitly write
     runtime API for modules like `slicer` into their __init__.pyi.
 
     Parameters
     ----------
     discover_patterns : str | list[str] | None
         fnmatch patterns passed directly to
-        generator3.discover_and_process_all_modules(name_pattern=...),
-        e.g.:
-            "PythonQt*"
-            "vtk*"
-            ["PythonQt*", "CTK*PythonQt*", "vtk*"]
-        If None, skip the discover step.
 
     slicer_patterns : str | list[str] | None
         fnmatch patterns on full attribute names like:
             "slicer.*", "slicer.qMRML*", "slicer.vtk*"
-        They are applied to the full "module.attr" name for any
-        module listed in introspect_modules.
-        Default: for each introspect module M, pattern "M.*".
 
     excludes : str | list[str] | None
         fnmatch patterns applied to:
           - full attribute names (e.g. "slicer.vtk*", "slicer.qMRML*")
           - AND module names (e.g. "NodeInfo*", "MRMLCorePython*", "PythonQt.CTK*").
-
     delete_py : bool
         After everything, mirror .py → .pyi and optionally delete .py.
 
     introspect_modules : str | list[str] | None
         Modules to introspect with IntrospectItems. Default is ["slicer"].
-        Can contain simple glob patterns matched against currently-loaded
-        modules, e.g.:
-            "slicer"
             ["slicer", "NodeInfo*"]
     """
     os.makedirs(DEST_DIR, exist_ok=True)
     setup_normal_logging()
     roots = [p for p in sys.path if isinstance(p, str) and os.path.isdir(p)]
 
-    # --- load previous state.json if present (for caching) -----------------
-    state_json = None
-    state_path = os.path.join(DEST_DIR, util_methods.STATE_FILE_NAME)
-    if os.path.exists(state_path):
-        try:
-            with open(state_path, "r", encoding="utf-8") as f:
-                state_json = json.load(f)
-            logging.info("Loaded generator3 state from %s", state_path)
-        except Exception as e:
-            logging.warning("Failed to load state JSON (%s), starting fresh", e)
-            state_json = None
-
-    gen = SkeletonGenerator(
+    # Generator3: creates generator with cached state (if any)
+    gen = SGEN.create_generator(
         output_dir=DEST_DIR,
         roots=roots,
-        state_json=state_json,   # <- caching state
-        write_state_json=True,   # <- generator3 will update it
     )
 
     # Normalize parameters
@@ -511,7 +448,7 @@ def generated(
             )
 
             try:
-                gen.process_module(mod_name, mod_file)
+                SGEN.process_module(mod_name, mod_file)
             except Exception as e:
                 logging.warning(
                     "process_module failed for %r (attrs %s): %s",
@@ -521,7 +458,7 @@ def generated(
                 )
 
         # -------------------------------------------------------------------
-        # 2) Run generator3.discover_and_process_all_modules(name_pattern)
+        # 2) Run
         # -------------------------------------------------------------------
         for pat in inc_disc_pats:
             logging.info(
@@ -529,10 +466,7 @@ def generated(
                 pat,
             )
             try:
-                gen.discover_and_process_all_modules(
-                    name_pattern=pat,
-                    builtins_only=False,
-                )
+                SGEN.discover(gen, pat)
             except Exception as e:
                 logging.warning(
                     "discover_and_process_all_modules failed for pattern %r: %s",
@@ -544,7 +478,7 @@ def generated(
         builtins.hasattr = old_hasattr
 
     # -----------------------------------------------------------------------
-    # 3) Mirror .py → .pyi and then write runtime API stubs, then optionally delete .py
+    # 3) Mirror .py to .pyi and then write runtime API stubs, then optionally delete .py
     # -----------------------------------------------------------------------
     mirror_py_to_pyi(DEST_DIR, delete_py=delete_py)
     write_runtime_api_stubs(DEST_DIR, runtime_info_by_module)
