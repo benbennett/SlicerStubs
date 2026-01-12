@@ -1,4 +1,3 @@
-
 import os
 import sys
 import logging
@@ -9,6 +8,7 @@ import types
 import fnmatch
 import builtins
 from . import config
+import sysconfig
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_CONFIG = config.OutputConfig()
@@ -328,30 +328,75 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
+def install_stubs_to_purelib(source_dir: str, delete_py: bool = False) -> None:
+    """
+    Install stub files from source_dir to purelib/slicer-stubs,
+    renaming .py files to .pyi during installation.
+    Overwrites existing files if they exist.
+    """
+    purelib_path = sysconfig.get_paths()["purelib"]
+    target_dir = os.path.join(purelib_path, "slicer-stubs")
+
+    logging.info(f"Installing stubs from {source_dir} to {target_dir}")
+
+    # Create target directory if it doesn't exist
+    os.makedirs(target_dir, exist_ok=True)
+
+    # Walk through source directory and copy/rename files
+    for dirpath, dirnames, filenames in os.walk(source_dir):
+        # Calculate relative path from source_dir
+        rel_path = os.path.relpath(dirpath, source_dir)
+
+        # Create corresponding directory in target
+        if rel_path != '.':
+            target_subdir = os.path.join(target_dir, rel_path)
+            os.makedirs(target_subdir, exist_ok=True)
+        else:
+            target_subdir = target_dir
+
+        # Copy files, renaming .py to .pyi
+        for filename in filenames:
+            source_file = os.path.join(dirpath, filename)
+
+            if filename.endswith('.py'):
+                # Rename .py to .pyi
+                target_filename = filename[:-3] + '.pyi'
+                target_file = os.path.join(target_subdir, target_filename)
+
+                # Overwrite if exists
+                if os.path.exists(target_file):
+                    os.remove(target_file)
+
+                shutil.copy2(source_file, target_file)
+                logging.info(f"Installed: {source_file} -> {target_file}")
+
+                # Delete source .py if requested
+                if delete_py:
+                    os.remove(source_file)
+                    logging.info(f"Deleted source: {source_file}")
+
+            else:
+                # Copy other files as-is
+                target_file = os.path.join(target_subdir, filename)
+
+                # Overwrite if exists
+                if os.path.exists(target_file):
+                    os.remove(target_file)
+
+                shutil.copy2(source_file, target_file)
+                logging.info(f"Copied: {source_file} -> {target_file}")
+
+    # Create py.typed file
+    py_typed_path = os.path.join(target_dir, "py.typed")
+    with open(py_typed_path, "w", encoding="utf-8") as f:
+        f.write("partial\n")
+
+    logging.info(f"Created py.typed marker: {py_typed_path}")
+    logging.info(f"Stubs installed to: {target_dir}")
+
+
 def generated_with_config(gen_config: config.GeneratorConfig = None):
     """
-    RAND explicitly write
-    runtime API for modules like `slicer` into their __init__.pyi.
-
-    Parameters
-    ----------
-    discover_patterns : str | list[str] | None
-        fnmatch patterns passed directly to
-
-    slicer_patterns : str | list[str] | None
-        fnmatch patterns on full attribute names like:
-            "slicer.*", "slicer.qMRML*", "slicer.vtk*"
-
-    excludes : str | list[str] | None
-        fnmatch patterns applied to:
-          - full attribute names (e.g. "slicer.vtk*", "slicer.qMRML*")
-          - AND module names (e.g. "NodeInfo*", "MRMLCorePython*", "PythonQt.CTK*").
-    delete_py : bool
-        After everything, mirror .py → .pyi and optionally delete .py.
-
-    introspect_modules : str | list[str] | None
-        Modules to introspect with IntrospectItems. Default is ["slicer"].
-            ["slicer", "NodeInfo*"]
     Generate stubs using the provided configuration.
     """
     if gen_config is None:
@@ -359,7 +404,7 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
 
     os.makedirs(DEST_DIR, exist_ok=True)
     setup_normal_logging()
-    
+
     # Log output directory information
     logging.info("=== OUTPUT DIRECTORY CONFIGURATION ===")
     logging.info("Destination directory: %s", DEST_DIR)
@@ -367,7 +412,6 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
     logging.info("Runtime directory: %s", DEFAULT_OUTPUT_CONFIG.runtime_dir)
     logging.info("Generator type: %s", DEFAULT_OUTPUT_CONFIG.GEN_TYPE)
     logging.info("======================================")
-
 
     gen = SGEN.create_generator(DEFAULT_OUTPUT_CONFIG)
 
@@ -482,11 +526,11 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
         builtins.hasattr = old_hasattr
 
     # -----------------------------------------------------------------------
-    # 3) Mirror .py to .pyi and then write runtime API stubs, then optionally delete .py
+    # 3) Write runtime API stubs, then install to purelib
     # -----------------------------------------------------------------------
-    mirror_py_to_pyi(DEST_DIR, delete_py=gen_config.delete_py)
     write_runtime_api_stubs(DEST_DIR, runtime_info_by_module)
-    logging.info("Done. Stubs are under %s", DEST_DIR)
+    install_stubs_to_purelib(DEST_DIR, delete_py=gen_config.delete_py)
+    logging.info("Done. Stubs installed to Python environment.")
 
 
 def generated(
