@@ -324,11 +324,66 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
             stub_path,
         )
 
+def install_stubs_to_purelib(source_dir: str, delete_py: bool = False) -> None:
+    """
+    Install stub files from source_dir to purelib/slicer-stubs,
+    renaming .py files to .pyi during installation.
+    Moves files and overwrites existing ones.
+    """
+    purelib_path = sysconfig.get_paths()["purelib"]
+    target_dir = os.path.join(purelib_path, "slicer-stubs")
+
+    logging.info(f"Installing stubs from {source_dir} to {target_dir}")
+
+    # Create target directory if it doesn't exist
+    os.makedirs(target_dir, exist_ok=True)
+
+    # Walk through source directory and move/rename files
+    for dirpath, dirnames, filenames in os.walk(source_dir):
+        # Calculate relative path from source_dir
+        rel_path = os.path.relpath(dirpath, source_dir)
+
+        # Create corresponding directory in target
+        if rel_path != '.':
+            target_subdir = os.path.join(target_dir, rel_path)
+            os.makedirs(target_subdir, exist_ok=True)
+        else:
+            target_subdir = target_dir
+
+        # Move files, renaming .py to .pyi
+        for filename in filenames:
+            source_file = os.path.join(dirpath, filename)
+
+            if filename.endswith('.py'):
+                # Rename .py to .pyi
+                target_filename = filename[:-3] + '.pyi'
+                target_file = os.path.join(target_subdir, target_filename)
+
+                # Move and rename (overwrites automatically)
+                shutil.move(source_file, target_file)
+                logging.info(f"Moved: {source_file} -> {target_file}")
+
+            else:
+                # Move other files as-is
+                target_file = os.path.join(target_subdir, filename)
+
+                # Move (overwrites automatically)
+                shutil.move(source_file, target_file)
+                logging.info(f"Moved: {source_file} -> {target_file}")
+
+    # Create py.typed file
+    py_typed_path = os.path.join(target_dir, "py.typed")
+    with open(py_typed_path, "w", encoding="utf-8") as f:
+        f.write("partial\n")
+
+    logging.info(f"Created py.typed marker: {py_typed_path}")
+    logging.info(f"Stubs installed to: {target_dir}")
+
 # ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
-def install_stubs_to_purelib(source_dir: str, delete_py: bool = False) -> None:
+def install_stubs_to_purelib_old(source_dir: str, delete_py: bool = False) -> None:
     """
     Install stub files from source_dir to purelib/slicer-stubs,
     renaming .py files to .pyi during installation.
