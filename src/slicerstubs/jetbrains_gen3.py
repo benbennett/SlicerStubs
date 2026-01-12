@@ -63,8 +63,8 @@ class JetBrainsGen3:
   # -------------------------------------------------------------------------
   # State handling
   # -------------------------------------------------------------------------
-  def load_state(self, output_dir: str):
-    state_path = os.path.join(output_dir, self.state_file_name)
+  def load_state(self, cache_dir: str):
+    state_path = os.path.join(cache_dir, self.state_file_name)
     if not os.path.exists(state_path):
       return None
 
@@ -80,17 +80,39 @@ class JetBrainsGen3:
   # -------------------------------------------------------------------------
   # Delegates to generator3
   # -------------------------------------------------------------------------
-  def __create_generator__(self, output_dir, roots, state_json):
-    return self.SkeletonGenerator(
-      output_dir=output_dir,
+  def __create_generator__(self, output_config):
+    state_json = self.load_state(output_config.cache_dir)
+    roots = [p for p in sys.path if isinstance(p, str) and os.path.isdir(p)]
+    generator = self.SkeletonGenerator(
+      output_dir=output_config.dest_dir,
       roots=roots,
       state_json=state_json,
       write_state_json=True,
     )
+    # Patch the discover method to write state to cache_dir instead of output_dir
+    original_discover = generator.discover_and_process_all_modules
+    def patched_discover(*args, **kwargs):
+      # Temporarily disable state writing in the original method
+      original_write_state = generator.write_state_json
+      generator.write_state_json = False
+      try:
+        result = original_discover(*args, **kwargs)
+        # Write state to cache_dir after discover completes
+        if original_write_state:
+          os.makedirs(output_config.cache_dir, exist_ok=True)
+          state_json_path = os.path.join(output_config.cache_dir, self.state_file_name)
+          logging.info('Writing skeletons state to %r', state_json_path)
+          with open(state_json_path, 'w') as f:
+            json.dump(generator.out_state_json, f, sort_keys=True)
+        return result
+      finally:
+        # Restore original state
+        generator.write_state_json = original_write_state
+    generator.discover_and_process_all_modules = patched_discover
+    return generator
 
-  def create_generator(self, output_dir, roots):
-    state_json = self.load_state(output_dir)
-    self.generator= self.__create_generator__(output_dir=output_dir, roots=roots, state_json=state_json)
+  def create_generator(self, output_config):
+    self.generator = self.__create_generator__(output_config)
     return self
 
   def process_module(self,  mod_name, mod_file):

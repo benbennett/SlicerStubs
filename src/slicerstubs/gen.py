@@ -1,4 +1,4 @@
-# encoding: utf-8
+
 import os
 import sys
 import logging
@@ -11,15 +11,14 @@ import builtins
 from . import config
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-CONFIG = config.OutputConfig()
-DEST_DIR = CONFIG.dest_dir
-SGEN=None
-#DEST_DIR = r"E:\slicer_stubs"  # no spaces
+DEFAULT_OUTPUT_CONFIG = config.OutputConfig()
+DEST_DIR = DEFAULT_OUTPUT_CONFIG.dest_dir
+SGEN = None
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-if CONFIG.GEN_TYPE==config.GenType.GENERATOR3:
+if DEFAULT_OUTPUT_CONFIG.GEN_TYPE==config.GenType.GENERATOR3:
     try:
         from .  import jetbrains_gen3
     except Exception:
@@ -77,6 +76,8 @@ def _as_list(x):
         return []
     if isinstance(x, str):
         return [x]
+    if hasattr(x, 'keys'):
+        return list(x.keys())
     return list(x)
 
 def _matches_any(patterns, text):
@@ -84,7 +85,7 @@ def _matches_any(patterns, text):
 
 def mirror_py_to_pyi(root: str, delete_py: bool = False) -> None:
     """
-    For every .py file under `root`, write a .pyi with the same content.
+    For every .py file under root, write a .pyi with the same content.
     Always overwrites any existing .pyi. Optionally delete the .py.
     """
     for dirpath, dirnames, filenames in os.walk(root):
@@ -327,13 +328,7 @@ def write_runtime_api_stubs(root_dir, runtime_info_by_module):
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
-def generated(
-    discover_patterns=None,
-    slicer_patterns=None,
-    excludes=None,
-    delete_py: bool = True,
-    introspect_modules=None,
-):
+def generated_with_config(gen_config: config.GeneratorConfig = None):
     """
     RAND explicitly write
     runtime API for modules like `slicer` into their __init__.pyi.
@@ -357,33 +352,31 @@ def generated(
     introspect_modules : str | list[str] | None
         Modules to introspect with IntrospectItems. Default is ["slicer"].
             ["slicer", "NodeInfo*"]
+    Generate stubs using the provided configuration.
     """
+    if gen_config is None:
+        gen_config = config.GeneratorConfig.get_default_config()
+
     os.makedirs(DEST_DIR, exist_ok=True)
     setup_normal_logging()
     
     # Log output directory information
     logging.info("=== OUTPUT DIRECTORY CONFIGURATION ===")
     logging.info("Destination directory: %s", DEST_DIR)
-    logging.info("Cache directory: %s", CONFIG.cache_dir)
-    logging.info("Runtime directory: %s", CONFIG.runtime_dir)
-    logging.info("Generator type: %s", CONFIG.GEN_TYPE)
+    logging.info("Cache directory: %s", DEFAULT_OUTPUT_CONFIG.cache_dir)
+    logging.info("Runtime directory: %s", DEFAULT_OUTPUT_CONFIG.runtime_dir)
+    logging.info("Generator type: %s", DEFAULT_OUTPUT_CONFIG.GEN_TYPE)
     logging.info("======================================")
-    
-    roots = [p for p in sys.path if isinstance(p, str) and os.path.isdir(p)]
 
-    # Generator3: creates generator with cached state (if any)
-    gen = SGEN.create_generator(
-        output_dir=DEST_DIR,
-        roots=roots,
-    )
 
-    # Normalize parameters
-    inc_disc_pats = _as_list(discover_patterns)
-    introspect_modules = expand_introspect_modules(introspect_modules)
-    inc_attr_pats = _as_list(slicer_patterns)
+    gen = SGEN.create_generator(DEFAULT_OUTPUT_CONFIG)
+
+    inc_disc_pats = list(gen_config.discover_patterns.keys())
+    introspect_modules = expand_introspect_modules(list(gen_config.introspect_modules.keys()))
+    inc_attr_pats = list(gen_config.slicer_patterns.keys())
     if not inc_attr_pats:
         inc_attr_pats = [f"{m}.*" for m in introspect_modules]
-    exc_pats = _as_list(excludes)
+    exc_pats = list(gen_config.excludes.keys())
 
     # -----------------------------------------------------------------------
     # 1) Runtime introspection of given modules' attributes/classes/etc.
@@ -477,7 +470,7 @@ def generated(
                 pat,
             )
             try:
-                SGEN.discover(pat)  # Remove the 'gen' argument
+                SGEN.discover(pat)
             except Exception as e:
                 logging.warning(
                     "discover_and_process_all_modules failed for pattern %r: %s",
@@ -491,10 +484,42 @@ def generated(
     # -----------------------------------------------------------------------
     # 3) Mirror .py to .pyi and then write runtime API stubs, then optionally delete .py
     # -----------------------------------------------------------------------
-    mirror_py_to_pyi(DEST_DIR, delete_py=delete_py)
+    mirror_py_to_pyi(DEST_DIR, delete_py=gen_config.delete_py)
     write_runtime_api_stubs(DEST_DIR, runtime_info_by_module)
     logging.info("Done. Stubs are under %s", DEST_DIR)
 
 
+def generated(
+    discover_patterns=None,
+    slicer_patterns=None,
+    excludes=None,
+    delete_py: bool = True,
+    introspect_modules=None,
+):
+  """    runtime API for modules like `slicer` into their __init__.pyi.
+
+  Parameters
+  ----------
+  discover_patterns : str | list[str] | None
+  fnmatch patterns passed directly to
+
+slicer_patterns : str | list[str] | None
+fnmatch patterns on full attribute names like:
+"slicer.*", "slicer.qMRML*", "slicer.vtk*"
+
+excludes : str | list[str] | None
+fnmatch patterns applied to:
+- full attribute names (e.g. "slicer.vtk*", "slicer.qMRML*")
+- AND module names (e.g. "NodeInfo*", "MRMLCorePython*", "PythonQt.CTK*").
+delete_py : bool
+After everything, mirror .py → .pyi and optionally delete .py.
+
+introspect_modules : str | list[str] | None
+Modules to introspect with IntrospectItems. Default is ["slicer"].
+  ["slicer", "NodeInfo*"]
+Generate stubs using the provided configuration.
+"""
+  in_config = config.GeneratorConfig(discover_patterns, slicer_patterns, excludes, delete_py, introspect_modules)
+  generated_with_config(in_config)
 if __name__ == "__main__":
     generated()
