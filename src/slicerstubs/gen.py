@@ -14,6 +14,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 CONFIG = config.OutputConfig()
 DEST_DIR = CONFIG.dest_dir
 SGEN=None
+#DEST_DIR = r"E:\slicer_stubs"  # no spaces
 
 # ---------------------------------------------------------------------------
 # Config
@@ -24,6 +25,7 @@ if CONFIG.GEN_TYPE==config.GenType.GENERATOR3:
     except Exception:
         import jetbrains_gen3
     SGEN= jetbrains_gen3.JetBrainsGen3(start_dir=current_dir)
+
 
 # ---------------------------------------------------------------------------
 # Logging setup: define TRACE but run at INFO so TRACE doesn't show
@@ -196,7 +198,7 @@ def get_stub_path(root_dir: str, module_name: str) -> str:
     os.makedirs(os.path.dirname(module_pyi), exist_ok=True)
     return module_pyi
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------らっしゃる
 # Runtime API stubs (for slicer.* etc.), with real types where possible
 # ---------------------------------------------------------------------------
 
@@ -358,6 +360,15 @@ def generated(
     """
     os.makedirs(DEST_DIR, exist_ok=True)
     setup_normal_logging()
+    
+    # Log output directory information
+    logging.info("=== OUTPUT DIRECTORY CONFIGURATION ===")
+    logging.info("Destination directory: %s", DEST_DIR)
+    logging.info("Cache directory: %s", CONFIG.cache_dir)
+    logging.info("Runtime directory: %s", CONFIG.runtime_dir)
+    logging.info("Generator type: %s", CONFIG.GEN_TYPE)
+    logging.info("======================================")
+    
     roots = [p for p in sys.path if isinstance(p, str) and os.path.isdir(p)]
 
     # Generator3: creates generator with cached state (if any)
@@ -458,7 +469,7 @@ def generated(
                 )
 
         # -------------------------------------------------------------------
-        # 2) Run
+        # 2) Run discover_and_process_all_modules for each pattern
         # -------------------------------------------------------------------
         for pat in inc_disc_pats:
             logging.info(
@@ -466,7 +477,7 @@ def generated(
                 pat,
             )
             try:
-                SGEN.discover(gen, pat)
+                SGEN.discover(pat)  # Remove the 'gen' argument
             except Exception as e:
                 logging.warning(
                     "discover_and_process_all_modules failed for pattern %r: %s",

@@ -11,18 +11,17 @@ class OutputConfig:
   """Resolve paths for stub generation inside the current 3D Slicer runtime."""
 
   def __init__(self):
-    # Assume we are running inside Slicer and use its paths directly.
-    import slicer  # noqa: F401
+    import slicer
     app = slicer.app
-    self.runtime_dir = os.path.abspath(app.slicerHome)
-    self.cache_dir = os.path.abspath(app.cachePath)
-    self.dest_dir = self._compute_dest_dir()
-    self.GEN_TYPE = GenType.GENERATOR3
-
-  def _compute_dest_dir(self) -> str:
-    """Prefer env override; otherwise place stubs under the Slicer cache dir."""
+    base_path = os.path.abspath(os.path.join(app.cachePath))
+    
     env_override = os.environ.get("SLICER_STUBS_DIR")
     if env_override:
-      return os.path.abspath(env_override)
-    return os.path.join(self.cache_dir, "slicer-stubs")
+      base_path = os.path.abspath(env_override)
+    self.runtime_dir = os.path.abspath(app.slicerHome)
+    self.build_dir = os.path.join(base_path,"slicer-stubs-build")
+    self.cache_dir = os.path.join(self.build_dir,"cache")
+    self.dest_dir =  os.path.join(self.build_dir,"slicer-stubs")
+    self.GEN_TYPE = GenType.GENERATOR3
+
 
