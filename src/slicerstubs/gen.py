@@ -16,6 +16,36 @@ DEST_DIR = DEFAULT_OUTPUT_CONFIG.dest_dir
 SGEN = None
 
 # ---------------------------------------------------------------------------
+# Enable faulthandler to capture C-level crashes (segfaults)
+# Writes to stub build directory for easy access
+# ---------------------------------------------------------------------------
+_FAULTHANDLER_FILE = None  # Keep file handle alive
+
+def _enable_faulthandler():
+    global _FAULTHANDLER_FILE
+    try:
+        import faulthandler
+        if faulthandler.is_enabled():
+            print("faulthandler already enabled", file=sys.stderr)
+            return
+
+        # Write crash log to the stub build directory
+        crash_log_path = os.path.join(DEFAULT_OUTPUT_CONFIG.build_dir, 'crash.log')
+        os.makedirs(DEFAULT_OUTPUT_CONFIG.build_dir, exist_ok=True)
+        try:
+            _FAULTHANDLER_FILE = open(crash_log_path, 'w')
+            faulthandler.enable(file=_FAULTHANDLER_FILE, all_threads=True)
+            print(f"faulthandler enabled, crash log: {crash_log_path}", file=sys.stderr)
+        except (IOError, OSError) as e:
+            # Fall back to stderr only
+            faulthandler.enable(file=sys.stderr, all_threads=True)
+            print(f"faulthandler enabled (stderr only, file failed: {e})", file=sys.stderr)
+    except ImportError:
+        print("faulthandler not available", file=sys.stderr)
+
+_enable_faulthandler()
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 if DEFAULT_OUTPUT_CONFIG.GEN_TYPE==config.GenType.GENERATOR3:
