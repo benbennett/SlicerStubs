@@ -27,9 +27,33 @@ class OutputConfig:
       base_path = os.path.abspath(env_override)
     self.runtime_dir = os.path.abspath(app.slicerHome)
     self.build_dir = os.path.join(base_path, "slicer-stubs-build")
-    self.cache_dir = os.path.join(self.build_dir, "cache")
-    self.dest_dir = os.path.join(self.build_dir, "slicer-stubs")
-    self.GEN_TYPE = GenType.GENERATOR3
+    self._GEN_TYPE = GenType.MYPY_GEN  # Changed for testing
+
+  @property
+  def GEN_TYPE(self):
+    return self._GEN_TYPE
+
+  @GEN_TYPE.setter
+  def GEN_TYPE(self, value):
+    self._GEN_TYPE = value
+
+  @property
+  def gen_subdir(self) -> str:
+    """Return generator-specific subdirectory name."""
+    if self._GEN_TYPE == GenType.GENERATOR3:
+      return "jetbrains-gen"
+    elif self._GEN_TYPE == GenType.MYPY_GEN:
+      return "mypy-gen"
+    else:
+      return "other-gen"
+
+  @property
+  def cache_dir(self) -> str:
+    return os.path.join(self.build_dir, self.gen_subdir, "cache")
+
+  @property
+  def dest_dir(self) -> str:
+    return os.path.join(self.build_dir, self.gen_subdir, "slicer-stubs")
 
 
 class GeneratorConfig:

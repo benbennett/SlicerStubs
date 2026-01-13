@@ -13,7 +13,6 @@ import sysconfig
 current_dir = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_CONFIG = config.OutputConfig()
 DEST_DIR = DEFAULT_OUTPUT_CONFIG.dest_dir
-SGEN = None
 
 # ---------------------------------------------------------------------------
 # Enable faulthandler to capture C-level crashes (segfaults)
@@ -46,14 +45,53 @@ def _enable_faulthandler():
 _enable_faulthandler()
 
 # ---------------------------------------------------------------------------
-# Config
+# Config - Initialize stub generator based on GEN_TYPE (lazy loading)
 # ---------------------------------------------------------------------------
-if DEFAULT_OUTPUT_CONFIG.GEN_TYPE==config.GenType.GENERATOR3:
-    try:
-        from .  import jetbrains_gen3
-    except Exception:
-        import jetbrains_gen3
-    SGEN= jetbrains_gen3.JetBrainsGen3(start_dir=current_dir)
+_SGEN_INSTANCE = None
+
+
+def _get_stub_generator():
+    """Get or initialize the stub generator based on configured GEN_TYPE.
+
+    The generator is lazily initialized on first access, allowing users to
+    change DEFAULT_OUTPUT_CONFIG.GEN_TYPE before the first call to generated().
+
+    Example:
+        from slicerstubs import gen, config
+        gen.DEFAULT_OUTPUT_CONFIG.GEN_TYPE = config.GenType.MYPY_GEN
+        gen.generated()  # Will use MypyGen
+    """
+    global _SGEN_INSTANCE
+
+    if _SGEN_INSTANCE is not None:
+        return _SGEN_INSTANCE
+
+    gen_type = DEFAULT_OUTPUT_CONFIG.GEN_TYPE
+
+    if gen_type == config.GenType.GENERATOR3:
+        try:
+            from . import jetbrains_gen3
+        except Exception:
+            import jetbrains_gen3
+        _SGEN_INSTANCE = jetbrains_gen3.JetBrainsGen3(start_dir=current_dir)
+
+    elif gen_type == config.GenType.MYPY_GEN:
+        try:
+            from . import mypy_gen
+        except Exception:
+            import mypy_gen
+        _SGEN_INSTANCE = mypy_gen.MypyGen(start_dir=current_dir)
+
+    else:
+        raise ValueError(f"Unsupported generator type: {gen_type}")
+
+    return _SGEN_INSTANCE
+
+
+def reset_stub_generator():
+    """Reset the stub generator instance, allowing re-initialization with a new GEN_TYPE."""
+    global _SGEN_INSTANCE
+    _SGEN_INSTANCE = None
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +536,8 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
     logging.info("Generator type: %s", DEFAULT_OUTPUT_CONFIG.GEN_TYPE)
     logging.info("======================================")
 
-    gen = SGEN.create_generator(DEFAULT_OUTPUT_CONFIG)
+    sgen = _get_stub_generator()
+    gen = sgen.create_generator(DEFAULT_OUTPUT_CONFIG)
 
     inc_disc_pats = list(gen_config.discover_patterns.keys())
     introspect_modules = expand_introspect_modules(list(gen_config.introspect_modules.keys()))
@@ -581,7 +620,7 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
             )
 
             try:
-                SGEN.process_module(mod_name, mod_file)
+                sgen.process_module(mod_name, mod_file)
             except Exception as e:
                 logging.warning(
                     "process_module failed for %r (attrs %s): %s",
@@ -599,7 +638,7 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
                 pat,
             )
             try:
-                SGEN.discover(pat)
+                sgen.discover(pat)
             except Exception as e:
                 logging.warning(
                     "discover_and_process_all_modules failed for pattern %r: %s",
