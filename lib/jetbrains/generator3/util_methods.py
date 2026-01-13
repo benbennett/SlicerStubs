@@ -315,7 +315,10 @@ def reliable_repr(value):
     for num_type in NUM_TYPES:
         if isinstance(value, num_type):
             return repr(num_type(value))
-    return repr(value)
+    try:
+        return repr(value)
+    except:
+        return "repr_failed"
 
 
 def sanitize_value(p_value):

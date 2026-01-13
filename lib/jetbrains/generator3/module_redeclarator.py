@@ -4,6 +4,20 @@ from generator3.util_methods import get_portable_test_module_path
 from generator3.docstring_parsing import *
 
 
+def _safe_in_seen(value, seen_values):
+    """
+    Check if value is in seen_values using id() comparison.
+    Avoids calling __eq__ on C++ objects which can cause access violations.
+    """
+    if seen_values is None:
+        return False
+    value_id = id(value)
+    for seen in seen_values:
+        if id(seen) == value_id:
+            return True
+    return False
+
+
 class emptylistdict(dict):
     """defaultdict not available before 2.5; simplest reimplementation using [] as default"""
 
@@ -251,7 +265,7 @@ class ModuleRedeclarator(object):
                             lpar, rpar = "(", ")"
                         out(indent, prefix, lpar)
                         for value in p_value:
-                            if value in seen_values:
+                            if _safe_in_seen(value, seen_values):
                                 value = SELF_VALUE
                             elif not isinstance(value, SIMPLEST_TYPES):
                                 seen_values.append(value)
@@ -272,11 +286,7 @@ class ModuleRedeclarator(object):
                         for k in keys:
                             value = p_value[k]
 
-                            try:
-                                is_seen = value in seen_values
-                            except:
-                                is_seen = False
-                                value = ERR_VALUE
+                            is_seen = _safe_in_seen(value, seen_values)
 
                             if is_seen:
                                 value = SELF_VALUE
