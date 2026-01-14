@@ -171,7 +171,7 @@ class MypyGen:
             # Use generate_stubs for batch processing
             options = self._Options(
                 pyversion=sys.version_info[:2],
-                no_import=False,
+                no_import=True,
                 inspect=True,
                 doc_dir="",
                 search_path=[],
@@ -183,10 +183,10 @@ class MypyGen:
                 modules=matching,
                 packages=[],
                 files=[],
-                verbose=False,
-                quiet=True,
+                verbose=True,
+                quiet=False,
                 export_less=False,
-                include_docstrings=False,
+                include_docstrings=True,
             )
 
             self._generate_stubs(options)

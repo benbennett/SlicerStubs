@@ -12,7 +12,7 @@ import sysconfig
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUTPUT_CONFIG = config.OutputConfig()
-DEST_DIR = DEFAULT_OUTPUT_CONFIG.dest_dir
+
 
 # ---------------------------------------------------------------------------
 # Enable faulthandler to capture C-level crashes (segfaults)
@@ -525,12 +525,12 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
     if gen_config is None:
         gen_config = config.GeneratorConfig.get_default_config()
 
-    os.makedirs(DEST_DIR, exist_ok=True)
+    dest_dir = DEFAULT_OUTPUT_CONFIG.dest_dir
+    os.makedirs(dest_dir, exist_ok=True)
     setup_normal_logging()
 
-    # Log output directory information
     logging.info("=== OUTPUT DIRECTORY CONFIGURATION ===")
-    logging.info("Destination directory: %s", DEST_DIR)
+    logging.info("Destination directory: %s", dest_dir)
     logging.info("Cache directory: %s", DEFAULT_OUTPUT_CONFIG.cache_dir)
     logging.info("Runtime directory: %s", DEFAULT_OUTPUT_CONFIG.runtime_dir)
     logging.info("Generator type: %s", DEFAULT_OUTPUT_CONFIG.GEN_TYPE)
@@ -652,8 +652,8 @@ def generated_with_config(gen_config: config.GeneratorConfig = None):
     # -----------------------------------------------------------------------
     # 3) Write runtime API stubs, then install to purelib
     # -----------------------------------------------------------------------
-    write_runtime_api_stubs(DEST_DIR, runtime_info_by_module)
-    install_stubs_to_purelib(DEST_DIR, delete_py=gen_config.delete_py)
+    write_runtime_api_stubs(dest_dir, runtime_info_by_module)
+    install_stubs_to_purelib(dest_dir, delete_py=gen_config.delete_py)
     logging.info("Done. Stubs installed to Python environment.")
 
 
