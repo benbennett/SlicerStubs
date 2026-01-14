@@ -663,6 +663,7 @@ def generated(
     excludes=None,
     delete_py: bool = True,
     introspect_modules=None,
+    generator: str | config.GenType = config.GenType.GENERATOR3,
 ):
   """    runtime API for modules like `slicer` into their __init__.pyi.
 
@@ -685,8 +686,29 @@ After everything, mirror .py → .pyi and optionally delete .py.
 introspect_modules : str | list[str] | None
 Modules to introspect with IntrospectItems. Default is ["slicer"].
   ["slicer", "NodeInfo*"]
-Generate stubs using the provided configuration.
+
+generator : str | config.GenType
+Which stub generator to use. Accepts a GenType enum or a string:
+  - "generator3" or GenType.GENERATOR3 (default)
+  - "mypy" or GenType.MYPY_GEN
+  - "vtk" or GenType.VTK_GEN
 """
+  # Convert string to GenType enum if needed
+  if isinstance(generator, str):
+      gen_map = {
+          "generator3": config.GenType.GENERATOR3,
+          "mypy": config.GenType.MYPY_GEN,
+          "vtk": config.GenType.VTK_GEN,
+      }
+      generator_lower = generator.lower()
+      if generator_lower not in gen_map:
+          raise ValueError(f"Unknown generator: {generator!r}. Valid options: {list(gen_map.keys())}")
+      generator = gen_map[generator_lower]
+
+  # Set the generator type and reset any cached instance
+  DEFAULT_OUTPUT_CONFIG.GEN_TYPE = generator
+  reset_stub_generator()
+
   in_config = config.GeneratorConfig(discover_patterns, slicer_patterns, excludes, delete_py, introspect_modules)
   generated_with_config(in_config)
 if __name__ == "__main__":
